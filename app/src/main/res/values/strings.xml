@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RingtoneManager</string>
+    <string name="contacts">Kontaktok</string>
+    <string name="search_contacts">Kontakt keresése…</string>
+    <string name="set_ringtone">Csengőhang beállítása</string>
+    <string name="current_ringtone">Jelenlegi csengőhang</string>
+    <string name="choose_source">Forrás választása</string>
+    <string name="spotify">Spotify</string>
+    <string name="youtube">YouTube</string>
+    <string name="search_music">Zene keresése…</string>
+    <string name="download">Letöltés</string>
+    <string name="set_as_ringtone">Beállítás csengőhangnak</string>
+    <string name="downloading">Letöltés folyamatban…</string>
+    <string name="done">Kész</string>
+    <string name="preview">Előnézet</string>
+    <string name="login_spotify">Bejelentkezés Spotify-ra</string>
+    <string name="no_contacts">Nincsenek kontaktok</string>
+    <string name="permission_required">Engedély szükséges</string>
+    <string name="grant_permission">Engedély megadása</string>
+    <string name="ringtone_set_success">Csengőhang sikeresen beállítva</string>
+    <string name="ringtone_set_error">Hiba a csengőhang beállításakor</string>
+    <string name="default_ringtone">Alapértelmezett csengőhang</string>
+    <string name="configure_api_keys">API kulcsok konfigurálása</string>
+    <string name="spotify_client_id_hint">Spotify Client ID</string>
+    <string name="youtube_api_key_hint">YouTube API kulcs</string>
+    <string name="save">Mentés</string>
+    <string name="settings">Beállítások</string>
+    <string name="cancel">Mégse</string>
+    <string name="stop">Megállítás</string>
+    <string name="play">Lejátszás</string>
+</resources>
