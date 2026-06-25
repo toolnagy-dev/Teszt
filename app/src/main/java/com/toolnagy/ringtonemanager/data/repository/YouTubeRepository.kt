@@ -291,7 +291,8 @@ class YouTubeRepository @Inject constructor(
                     log.appendLine("   ${cfg.name} → HTTP ${response.code}")
                     continue
                 }
-                val body = response.body?.string() ?: run {
+                val body = response.body?.string()
+                if (body == null) {
                     log.appendLine("   ${cfg.name} → üres válasz")
                     continue
                 }
