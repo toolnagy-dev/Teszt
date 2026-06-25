@@ -66,6 +66,10 @@ private data class InnertubeClientConfig(
     val apiKey: String,
     val userAgent: String,
     val androidSdk: Int? = null,
+    val deviceMake: String? = null,
+    val deviceModel: String? = null,
+    val osName: String? = null,
+    val osVersion: String? = null,
     val embedUrl: String? = null
 )
 
@@ -78,46 +82,53 @@ class YouTubeRepository @Inject constructor(
     companion object {
         private val KEY_API_KEY = stringPreferencesKey("youtube_api_key")
 
-        // Több InnerTube kliens — ha az egyik 400-at ad, a következőt próbálja
+        // Több InnerTube kliens — ha az egyik nem megy, a következőt próbálja.
+        // ANDROID_VR az első: 2024-2025-ben ez a legmegbízhatóbb, nincs PO token követelmény.
         private val INNERTUBE_CLIENTS = listOf(
-            // TV embedded player — nincs PO token követelmény, legtöbb videóhoz működik
+            // Android VR (Oculus Quest) — jelenleg a legmegbízhatóbb, nincs PO token
             InnertubeClientConfig(
-                name = "TV_EMBEDDED",
-                clientName = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-                clientVersion = "2.0",
-                clientNameId = "85",
+                name = "ANDROID_VR",
+                clientName = "ANDROID_VR",
+                clientVersion = "1.60.19",
+                clientNameId = "28",
                 apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-                userAgent = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
-                embedUrl = "https://www.youtube.com/"
+                userAgent = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; en_US; Quest 3 Build/SQ3A.220605.009.A1) gzip",
+                androidSdk = 32,
+                deviceMake = "Oculus",
+                deviceModel = "Quest 3",
+                osName = "Android",
+                osVersion = "12L"
             ),
-            // Android Testsuite — egyszerűsített kliens, kevesebb megszorítással
-            InnertubeClientConfig(
-                name = "ANDROID_TESTSUITE",
-                clientName = "ANDROID_TESTSUITE",
-                clientVersion = "1.9",
-                clientNameId = "30",
-                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-                userAgent = "com.google.android.youtube/1.9 (Linux; U; Android 11) gzip",
-                androidSdk = 30
-            ),
-            // Standard Android
-            InnertubeClientConfig(
-                name = "ANDROID",
-                clientName = "ANDROID",
-                clientVersion = "19.09.37",
-                clientNameId = "3",
-                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-                userAgent = "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
-                androidSdk = 30
-            ),
-            // iOS
+            // iOS — friss verzió
             InnertubeClientConfig(
                 name = "IOS",
                 clientName = "IOS",
-                clientVersion = "19.09.3",
+                clientVersion = "19.45.4",
                 clientNameId = "5",
                 apiKey = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUA",
-                userAgent = "com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)"
+                userAgent = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)",
+                deviceMake = "Apple",
+                deviceModel = "iPhone16,2",
+                osName = "iPhone",
+                osVersion = "18.1.0.22B83"
+            ),
+            // Mobil web
+            InnertubeClientConfig(
+                name = "MWEB",
+                clientName = "MWEB",
+                clientVersion = "2.20241202.07.00",
+                clientNameId = "2",
+                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+            ),
+            // TV HTML5 — friss verzió
+            InnertubeClientConfig(
+                name = "TVHTML5",
+                clientName = "TVHTML5",
+                clientVersion = "7.20241201.18.00",
+                clientNameId = "7",
+                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
             )
         )
 
@@ -262,13 +273,18 @@ class YouTubeRepository @Inject constructor(
 
     private fun buildInnertubeJson(videoId: String, cfg: InnertubeClientConfig): String {
         val clientBlock = buildString {
-            append(""""clientName":"${cfg.clientName}","clientVersion":"${cfg.clientVersion}","hl":"en","timeZone":"UTC","utcOffsetMinutes":0""")
+            append(""""clientName":"${cfg.clientName}","clientVersion":"${cfg.clientVersion}","hl":"en","gl":"US","timeZone":"UTC","utcOffsetMinutes":0""")
             if (cfg.androidSdk != null) append(""","androidSdkVersion":${cfg.androidSdk}""")
+            if (cfg.deviceMake != null) append(""","deviceMake":"${cfg.deviceMake}"""")
+            if (cfg.deviceModel != null) append(""","deviceModel":"${cfg.deviceModel}"""")
+            if (cfg.osName != null) append(""","osName":"${cfg.osName}"""")
+            if (cfg.osVersion != null) append(""","osVersion":"${cfg.osVersion}"""")
         }
+        val tail = ""","contentCheckOk":true,"racyCheckOk":true"""
         return if (cfg.embedUrl != null) {
-            """{"videoId":"$videoId","context":{"client":{$clientBlock},"thirdParty":{"embedUrl":"${cfg.embedUrl}"}}}"""
+            """{"videoId":"$videoId","context":{"client":{$clientBlock},"thirdParty":{"embedUrl":"${cfg.embedUrl}"}}$tail}"""
         } else {
-            """{"videoId":"$videoId","context":{"client":{$clientBlock}}}"""
+            """{"videoId":"$videoId","context":{"client":{$clientBlock}}$tail}"""
         }
     }
 
@@ -277,15 +293,19 @@ class YouTubeRepository @Inject constructor(
             try {
                 val json = buildInnertubeJson(videoId, cfg)
                 val requestBody = json.toRequestBody("application/json".toMediaType())
-                val request = Request.Builder()
+                val isWebClient = cfg.clientName == "MWEB" || cfg.clientName == "WEB" || cfg.clientName.startsWith("TVHTML5")
+                val builder = Request.Builder()
                     .url("https://www.youtube.com/youtubei/v1/player?key=${cfg.apiKey}&prettyPrint=false")
                     .post(requestBody)
                     .addHeader("User-Agent", cfg.userAgent)
                     .addHeader("X-YouTube-Client-Name", cfg.clientNameId)
                     .addHeader("X-YouTube-Client-Version", cfg.clientVersion)
-                    .addHeader("Origin", "https://www.youtube.com")
-                    .addHeader("Referer", "https://www.youtube.com/")
-                    .build()
+                    .addHeader("Content-Type", "application/json")
+                if (isWebClient) {
+                    builder.addHeader("Origin", "https://www.youtube.com")
+                    builder.addHeader("Referer", "https://www.youtube.com/")
+                }
+                val request = builder.build()
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     log.appendLine("   ${cfg.name} → HTTP ${response.code}")
