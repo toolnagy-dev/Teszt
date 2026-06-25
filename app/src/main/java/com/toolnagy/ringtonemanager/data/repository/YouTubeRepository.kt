@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.google.gson.annotations.SerializedName
 import com.toolnagy.ringtonemanager.data.api.YouTubeApiService
 import com.toolnagy.ringtonemanager.data.model.YouTubeVideo
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,8 +12,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -25,35 +26,35 @@ import javax.inject.Singleton
 
 private val Context.ytDataStore by preferencesDataStore(name = "youtube_prefs")
 
+// InnerTube API models
+private data class InnertubPlayerResponse(
+    val streamingData: InnertubStreamingData?,
+    val playabilityStatus: InnertubPlayabilityStatus?
+)
+private data class InnertubPlayabilityStatus(val status: String?)
+private data class InnertubStreamingData(
+    val adaptiveFormats: List<InnertubFormat>?,
+    val formats: List<InnertubFormat>?
+)
+private data class InnertubFormat(
+    val url: String?,
+    val mimeType: String?,
+    val bitrate: Int?,
+    val audioQuality: String?
+)
+
 // Piped API models
-private data class PipedStreamsResponse(
-    val audioStreams: List<PipedAudioStream>?
-)
-private data class PipedAudioStream(
-    val url: String?,
-    val quality: String?,
-    val mimeType: String?
-)
-private data class PipedSearchResponse(
-    val items: List<PipedSearchItem>?
-)
+private data class PipedStreamsResponse(val audioStreams: List<PipedAudioStream>?)
+private data class PipedAudioStream(val url: String?, val quality: String?, val mimeType: String?)
+private data class PipedSearchResponse(val items: List<PipedSearchItem>?)
 private data class PipedSearchItem(
-    val url: String?,
-    val title: String?,
-    val uploaderName: String?,
-    val thumbnail: String?,
-    val type: String?
+    val url: String?, val title: String?, val uploaderName: String?,
+    val thumbnail: String?, val type: String?
 )
 
 // Invidious API models
-private data class InvidiousVideoResponse(
-    val adaptiveFormats: List<InvidiousAdaptiveFormat>?
-)
-private data class InvidiousAdaptiveFormat(
-    val url: String?,
-    val type: String?,
-    val bitrate: String?
-)
+private data class InvidiousVideoResponse(val adaptiveFormats: List<InvidiousAdaptiveFormat>?)
+private data class InvidiousAdaptiveFormat(val url: String?, val type: String?, val bitrate: String?)
 
 @Singleton
 class YouTubeRepository @Inject constructor(
@@ -109,11 +110,9 @@ class YouTubeRepository @Inject constructor(
             } catch (_: Exception) {}
         }
 
-        // Piped API keresés (API kulcs nélkül is működik)
         val pipedResults = searchWithPiped(query)
         if (pipedResults.isNotEmpty()) return pipedResults
 
-        // NewPipe fallback
         return searchWithNewPipe(query)
     }
 
@@ -168,6 +167,9 @@ class YouTubeRepository @Inject constructor(
     }
 
     suspend fun extractAudioStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        val innertubeUrl = extractWithInnertube(videoId)
+        if (innertubeUrl != null) return@withContext innertubeUrl
+
         val pipedUrl = extractWithPiped(videoId)
         if (pipedUrl != null) return@withContext pipedUrl
 
@@ -175,6 +177,31 @@ class YouTubeRepository @Inject constructor(
         if (invidiousUrl != null) return@withContext invidiousUrl
 
         extractWithNewPipe(videoId)
+    }
+
+    private fun extractWithInnertube(videoId: String): String? {
+        return try {
+            val json = """{"videoId":"$videoId","context":{"client":{"clientName":"ANDROID","clientVersion":"17.31.35","androidSdkVersion":30,"hl":"en","timeZone":"UTC","utcOffsetMinutes":0}}}"""
+            val requestBody = json.toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false")
+                .post(requestBody)
+                .addHeader("User-Agent", "com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip")
+                .addHeader("X-YouTube-Client-Name", "3")
+                .addHeader("X-YouTube-Client-Version", "17.31.35")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) return null
+            val body = response.body?.string() ?: return null
+            val result = gson.fromJson(body, InnertubPlayerResponse::class.java)
+            if (result.playabilityStatus?.status != "OK") return null
+            result.streamingData?.adaptiveFormats
+                ?.filter { it.url != null && it.mimeType?.startsWith("audio") == true }
+                ?.maxByOrNull { it.bitrate ?: 0 }
+                ?.url
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun extractWithPiped(videoId: String): String? {
