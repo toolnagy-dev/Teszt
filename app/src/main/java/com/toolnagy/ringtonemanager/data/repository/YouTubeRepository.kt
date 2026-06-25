@@ -84,7 +84,10 @@ class YouTubeRepository @Inject constructor(
             audioStreams
                 .sortedByDescending { it.averageBitrate }
                 .firstOrNull()
-                ?.url
+                ?.let {
+                    @Suppress("DEPRECATION")
+                    it.content ?: it.url
+                }
         } catch (e: Exception) {
             null
         }
