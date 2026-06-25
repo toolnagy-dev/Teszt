@@ -89,11 +89,22 @@ fun YouTubeBrowserScreen(
             )
 
             if (apiKey.isBlank()) {
-                YouTubeApiKeyBanner(
-                    apiKey = apiKey,
-                    onApiKeyChange = viewModel::updateApiKey,
-                    onSave = viewModel::saveApiKey
-                )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Add meg a YouTube API kulcsot a ⚙️ Beállításokban!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
             }
 
             when {

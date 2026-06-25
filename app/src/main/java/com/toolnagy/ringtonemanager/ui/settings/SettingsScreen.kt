@@ -1,6 +1,8 @@
 package com.toolnagy.ringtonemanager.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -9,10 +11,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val ytApiKey by viewModel.youtubeApiKey.collectAsStateWithLifecycle()
+    val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(saved) {
+        if (saved) {
+            snackbarHostState.showSnackbar("Mentve!")
+            viewModel.clearSaved()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -23,43 +41,55 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Text(
-                "API kulcsok konfigurálása",
+                "YouTube API kulcs",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                "Az alkalmazás működéséhez az alábbi API kulcsok szükségesek:",
-                style = MaterialTheme.typography.bodyMedium,
+                "console.cloud.google.com → YouTube Data API v3 → Credentials → API Key",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(24.dp))
-
-            ApiKeyInfoCard(
-                title = "Spotify Client ID",
-                description = "Menj a Spotify Developer Dashboard-ra (developer.spotify.com), hozz létre egy alkalmazást és másold be a Client ID-t.",
-                icon = Icons.Default.LibraryMusic,
-                whereToGet = "developer.spotify.com/dashboard"
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = ytApiKey,
+                onValueChange = viewModel::updateYouTubeApiKey,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("YouTube Data API v3 kulcs") },
+                placeholder = { Text("AIza...") },
+                singleLine = true,
+                trailingIcon = {
+                    if (ytApiKey.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateYouTubeApiKey("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Törlés")
+                        }
+                    }
+                }
             )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = viewModel::saveYouTubeApiKey,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Mentés")
+            }
 
-            Spacer(Modifier.height(16.dp))
-
-            ApiKeyInfoCard(
-                title = "YouTube Data API v3",
-                description = "Google Cloud Console-on engedélyezd a YouTube Data API v3-at és hozz létre egy API kulcsot.",
-                icon = Icons.Default.VideoLibrary,
-                whereToGet = "console.cloud.google.com"
-            )
-
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider()
             Spacer(Modifier.height(32.dp))
 
             Card(
@@ -75,46 +105,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
-                            "API kulcs nélkül",
+                            "Spotify",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "A Spotify browsert csak Client ID-vel és bejelentkezéssel lehet használni. A YouTube keresés NewPipe alapú extrakciót használ automatikusan, ha nincs API kulcs (korlátozott).",
+                            "A Spotify bejelentkezés a YouTube képernyőn belül elérhető. Spotify Premium szükséges.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ApiKeyInfoCard(
-    title: String,
-    description: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    whereToGet: String
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(description, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    whereToGet,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
             }
         }
     }
