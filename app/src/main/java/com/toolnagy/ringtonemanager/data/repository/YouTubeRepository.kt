@@ -45,6 +45,16 @@ private data class PipedSearchItem(
     val type: String?
 )
 
+// Invidious API models
+private data class InvidiousVideoResponse(
+    val adaptiveFormats: List<InvidiousAdaptiveFormat>?
+)
+private data class InvidiousAdaptiveFormat(
+    val url: String?,
+    val type: String?,
+    val bitrate: String?
+)
+
 @Singleton
 class YouTubeRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -54,12 +64,21 @@ class YouTubeRepository @Inject constructor(
     companion object {
         private val KEY_API_KEY = stringPreferencesKey("youtube_api_key")
 
-        // Piped API instances – ha az első nem megy, a következőt próbálja
         private val PIPED_INSTANCES = listOf(
             "https://pipedapi.kavin.rocks",
             "https://pipedapi.adminforge.de",
             "https://piped-api.garudalinux.org",
-            "https://pipedapi.darkness.services"
+            "https://pipedapi.darkness.services",
+            "https://pipedapi.tokhmi.xyz",
+            "https://piped-api.privacy.com.de"
+        )
+
+        private val INVIDIOUS_INSTANCES = listOf(
+            "https://inv.riverside.rocks",
+            "https://invidious.tiekoetter.com",
+            "https://y.com.sb",
+            "https://invidious.privacydev.net",
+            "https://invidious.lunar.icu"
         )
     }
 
@@ -149,11 +168,12 @@ class YouTubeRepository @Inject constructor(
     }
 
     suspend fun extractAudioStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        // 1. Próbálja a Piped API-t (legmegbízhatóbb)
         val pipedUrl = extractWithPiped(videoId)
         if (pipedUrl != null) return@withContext pipedUrl
 
-        // 2. NewPipe fallback
+        val invidiousUrl = extractWithInvidious(videoId)
+        if (invidiousUrl != null) return@withContext invidiousUrl
+
         extractWithNewPipe(videoId)
     }
 
@@ -171,6 +191,27 @@ class YouTubeRepository @Inject constructor(
                 val streamUrl = result.audioStreams
                     ?.filter { it.url != null && it.mimeType?.startsWith("audio") == true }
                     ?.maxByOrNull { it.quality?.replace("[^0-9]".toRegex(), "")?.toIntOrNull() ?: 0 }
+                    ?.url
+                if (streamUrl != null) return streamUrl
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun extractWithInvidious(videoId: String): String? {
+        for (instance in INVIDIOUS_INSTANCES) {
+            try {
+                val url = "$instance/api/v1/videos/$videoId?fields=adaptiveFormats"
+                val request = Request.Builder().url(url)
+                    .addHeader("User-Agent", "RingtoneManager/1.0")
+                    .build()
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) continue
+                val body = response.body?.string() ?: continue
+                val result = gson.fromJson(body, InvidiousVideoResponse::class.java)
+                val streamUrl = result.adaptiveFormats
+                    ?.filter { it.url != null && it.type?.startsWith("audio") == true }
+                    ?.maxByOrNull { it.bitrate?.toLongOrNull() ?: 0L }
                     ?.url
                 if (streamUrl != null) return streamUrl
             } catch (_: Exception) {}
