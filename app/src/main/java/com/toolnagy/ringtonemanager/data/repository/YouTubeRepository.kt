@@ -57,6 +57,16 @@ private data class PipedSearchItem(
 private data class InvidiousVideoResponse(val adaptiveFormats: List<InvidiousAdaptiveFormat>?)
 private data class InvidiousAdaptiveFormat(val url: String?, val type: String?, val bitrate: String?)
 
+// iTunes Search API models (ingyenes, kulcs nélkül, közvetlen 30s előnézet)
+private data class ItunesResponse(val results: List<ItunesTrack>?)
+private data class ItunesTrack(
+    val trackId: Long?,
+    val trackName: String?,
+    val artistName: String?,
+    val artworkUrl100: String?,
+    val previewUrl: String?
+)
+
 // InnerTube kliens konfiguráció
 private data class InnertubeClientConfig(
     val name: String,
@@ -159,6 +169,11 @@ class YouTubeRepository @Inject constructor(
     }
 
     suspend fun searchVideos(query: String): List<YouTubeVideo> {
+        // 1. iTunes – megbízható, közvetlen letölthető 30s előnézet (csengőhangnak ideális)
+        val itunesResults = searchWithItunes(query)
+        if (itunesResults.isNotEmpty()) return itunesResults
+
+        // 2. YouTube Data API (ha van kulcs) – csak ha az iTunes nem adott találatot
         val key = apiKey.firstOrNull()
         if (!key.isNullOrBlank()) {
             try {
@@ -177,10 +192,39 @@ class YouTubeRepository @Inject constructor(
             } catch (_: Exception) {}
         }
 
+        // 3. Piped / NewPipe fallback
         val pipedResults = searchWithPiped(query)
         if (pipedResults.isNotEmpty()) return pipedResults
 
         return searchWithNewPipe(query)
+    }
+
+    private suspend fun searchWithItunes(query: String): List<YouTubeVideo> = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://itunes.apple.com/search?term=${java.net.URLEncoder.encode(query, "UTF-8")}&media=music&entity=song&limit=25"
+            val request = Request.Builder().url(url)
+                .addHeader("User-Agent", "RingtoneManager/1.0")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+            val body = response.body?.string() ?: return@withContext emptyList()
+            val result = gson.fromJson(body, ItunesResponse::class.java)
+            result.results
+                ?.filter { it.previewUrl != null && it.trackId != null }
+                ?.map { track ->
+                    YouTubeVideo(
+                        id = "itunes_${track.trackId}",
+                        title = track.trackName ?: "",
+                        channelName = track.artistName ?: "",
+                        // Nagyobb borítókép: 100x100 → 300x300
+                        thumbnailUrl = track.artworkUrl100?.replace("100x100", "300x300") ?: "",
+                        durationText = "0:30",
+                        directAudioUrl = track.previewUrl
+                    )
+                } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private suspend fun searchWithPiped(query: String): List<YouTubeVideo> = withContext(Dispatchers.IO) {

@@ -42,7 +42,6 @@ fun YouTubeBrowserScreen(
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val downloadStates by viewModel.downloadStates.collectAsStateWithLifecycle()
-    val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val completedUri by viewModel.completedRingtoneUri.collectAsStateWithLifecycle()
     val errorLog by viewModel.errorLog.collectAsStateWithLifecycle()
 
@@ -65,9 +64,9 @@ fun YouTubeBrowserScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = YouTubeRed)
+                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = YouTubeRed)
                         Spacer(Modifier.width(8.dp))
-                        Text("YouTube", fontWeight = FontWeight.Bold)
+                        Text("Zene keresése", fontWeight = FontWeight.Bold)
                     }
                 },
                 navigationIcon = {
@@ -89,7 +88,7 @@ fun YouTubeBrowserScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Zene keresése YouTube-on…") },
+                placeholder = { Text("Előadó vagy dal címe…") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -101,25 +100,6 @@ fun YouTubeBrowserScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.extraLarge
             )
-
-            if (apiKey.isBlank()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Add meg a YouTube API kulcsot a ⚙️ Beállításokban!",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-            }
 
             when {
                 isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -135,20 +115,20 @@ fun YouTubeBrowserScreen(
                 videos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
                         Icon(
-                            Icons.Default.VideoLibrary,
+                            Icons.Default.MusicNote,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = YouTubeRed
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Keress zenét YouTube-on",
+                            "Keress zenét",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "A zene letöltésre kerül és csengőhangként lesz beállítva.",
+                            "Írd be az előadót vagy a dal címét. A 30 másodperces részlet letöltődik és csengőhangként beállítható.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -294,7 +274,7 @@ private fun YouTubeVideoItem(
             model = video.thumbnailUrl,
             contentDescription = null,
             modifier = Modifier
-                .size(width = 90.dp, height = 56.dp)
+                .size(56.dp)
                 .clip(RoundedCornerShape(6.dp)),
             contentScale = ContentScale.Crop
         )
@@ -363,5 +343,5 @@ private fun YouTubeVideoItem(
             }
         }
     }
-    HorizontalDivider(modifier = Modifier.padding(start = 118.dp))
+    HorizontalDivider(modifier = Modifier.padding(start = 84.dp))
 }

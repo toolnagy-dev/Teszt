@@ -85,14 +85,20 @@ class YouTubeBrowserViewModel @Inject constructor(
 
     fun downloadAndSetRingtone(video: YouTubeVideo) {
         viewModelScope.launch {
-            updateDownloadState(video.id, DownloadStatus.EXTRACTING, 0f)
-
-            val extraction = repository.extractAudioStreamUrl(video.id)
-            val streamUrl = extraction.url
-            if (streamUrl == null) {
-                updateDownloadState(video.id, DownloadStatus.ERROR, 0f, "Nem sikerült kinyerni a hangot")
-                _errorLog.value = "HANG KINYERÉSE SIKERTELEN\n\n${extraction.log}"
-                return@launch
+            val streamUrl: String
+            if (video.directAudioUrl != null) {
+                // Közvetlen letölthető URL (pl. iTunes előnézet) – nincs szükség kinyerésre
+                streamUrl = video.directAudioUrl
+            } else {
+                updateDownloadState(video.id, DownloadStatus.EXTRACTING, 0f)
+                val extraction = repository.extractAudioStreamUrl(video.id)
+                val extracted = extraction.url
+                if (extracted == null) {
+                    updateDownloadState(video.id, DownloadStatus.ERROR, 0f, "Nem sikerült kinyerni a hangot")
+                    _errorLog.value = "HANG KINYERÉSE SIKERTELEN\n\n${extraction.log}"
+                    return@launch
+                }
+                streamUrl = extracted
             }
 
             updateDownloadState(video.id, DownloadStatus.DOWNLOADING, 0f)

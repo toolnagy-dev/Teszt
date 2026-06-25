@@ -40,10 +40,17 @@ class RingtoneHelper @Inject constructor(
                 ?: return@withContext DownloadResult(null, "Üres válasz a szervertől")
             val contentLength = body.contentLength()
 
+            // Formátum meghatározása a Content-Type / URL alapján
+            val contentType = response.header("Content-Type") ?: ""
+            val isM4a = contentType.contains("mp4") || contentType.contains("aac") ||
+                url.contains(".m4a") || url.contains(".aac")
+            val extension = if (isM4a) "m4a" else "mp3"
+            val mimeType = if (isM4a) "audio/mp4" else "audio/mpeg"
+
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, "$fileName.mp3")
-                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, "$fileName.$extension")
+                    put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
                     put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_RINGTONES)
                     put(MediaStore.Audio.Media.IS_RINGTONE, true)
                     put(MediaStore.Audio.Media.IS_PENDING, 1)
@@ -69,7 +76,7 @@ class RingtoneHelper @Inject constructor(
             } else {
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RINGTONES)
                 dir.mkdirs()
-                val file = File(dir, "$fileName.mp3")
+                val file = File(dir, "$fileName.$extension")
                 FileOutputStream(file).use { out ->
                     val buf = ByteArray(8192)
                     var downloaded = 0L
@@ -84,7 +91,7 @@ class RingtoneHelper @Inject constructor(
                 val values = ContentValues().apply {
                     put(MediaStore.Audio.Media.DATA, file.absolutePath)
                     put(MediaStore.Audio.Media.TITLE, fileName)
-                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                    put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
                     put(MediaStore.Audio.Media.IS_RINGTONE, true)
                 }
                 context.contentResolver.insert(MediaStore.Audio.Media.getContentUriForPath(file.absolutePath)!!, values)

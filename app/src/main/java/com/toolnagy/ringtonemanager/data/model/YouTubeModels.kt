@@ -7,7 +7,10 @@ data class YouTubeVideo(
     val title: String,
     val channelName: String,
     val thumbnailUrl: String,
-    val durationText: String
+    val durationText: String,
+    // Ha nem null, ez egy közvetlen letölthető hang URL (pl. iTunes előnézet).
+    // Ilyenkor nem kell YouTube-ból kinyerni a hangot.
+    val directAudioUrl: String? = null
 )
 
 data class YouTubeSearchResponse(
