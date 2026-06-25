@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -56,12 +57,20 @@ class YouTubeRepository @Inject constructor(
 
     private suspend fun searchWithNewPipe(query: String): List<YouTubeVideo> = withContext(Dispatchers.IO) {
         try {
-            val searchResult = NewPipe.getService(0)
-                .searchQHFactory
-                .fromQuery(query, emptyList(), "")
-            searchResult.getPage(searchResult.initialPage)
-
-            emptyList()
+            val service = NewPipe.getService(0)
+            val extractor = service.getSearchExtractor(query)
+            extractor.fetchPage()
+            extractor.initialPage.items
+                .filterIsInstance<StreamInfoItem>()
+                .map { item ->
+                    YouTubeVideo(
+                        id = item.url.substringAfter("v=").substringBefore("&"),
+                        title = item.name ?: "",
+                        channelName = item.uploaderName ?: "",
+                        thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: "",
+                        durationText = ""
+                    )
+                }
         } catch (e: Exception) {
             emptyList()
         }
