@@ -66,7 +66,11 @@ class YouTubeBrowserViewModel @Inject constructor(
     fun updateApiKey(key: String) { _apiKey.value = key }
 
     fun saveApiKey() {
-        viewModelScope.launch { repository.saveApiKey(_apiKey.value) }
+        viewModelScope.launch {
+            repository.saveApiKey(_apiKey.value)
+            val query = _searchQuery.value
+            if (query.length >= 3) search(query)
+        }
     }
 
     private suspend fun search(query: String) {
