@@ -57,6 +57,18 @@ private data class PipedSearchItem(
 private data class InvidiousVideoResponse(val adaptiveFormats: List<InvidiousAdaptiveFormat>?)
 private data class InvidiousAdaptiveFormat(val url: String?, val type: String?, val bitrate: String?)
 
+// InnerTube kliens konfiguráció
+private data class InnertubeClientConfig(
+    val name: String,
+    val clientName: String,
+    val clientVersion: String,
+    val clientNameId: String,
+    val apiKey: String,
+    val userAgent: String,
+    val androidSdk: Int? = null,
+    val embedUrl: String? = null
+)
+
 @Singleton
 class YouTubeRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -65,6 +77,49 @@ class YouTubeRepository @Inject constructor(
 ) {
     companion object {
         private val KEY_API_KEY = stringPreferencesKey("youtube_api_key")
+
+        // Több InnerTube kliens — ha az egyik 400-at ad, a következőt próbálja
+        private val INNERTUBE_CLIENTS = listOf(
+            // TV embedded player — nincs PO token követelmény, legtöbb videóhoz működik
+            InnertubeClientConfig(
+                name = "TV_EMBEDDED",
+                clientName = "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+                clientVersion = "2.0",
+                clientNameId = "85",
+                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                userAgent = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1",
+                embedUrl = "https://www.youtube.com/"
+            ),
+            // Android Testsuite — egyszerűsített kliens, kevesebb megszorítással
+            InnertubeClientConfig(
+                name = "ANDROID_TESTSUITE",
+                clientName = "ANDROID_TESTSUITE",
+                clientVersion = "1.9",
+                clientNameId = "30",
+                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                userAgent = "com.google.android.youtube/1.9 (Linux; U; Android 11) gzip",
+                androidSdk = 30
+            ),
+            // Standard Android
+            InnertubeClientConfig(
+                name = "ANDROID",
+                clientName = "ANDROID",
+                clientVersion = "19.09.37",
+                clientNameId = "3",
+                apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+                userAgent = "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+                androidSdk = 30
+            ),
+            // iOS
+            InnertubeClientConfig(
+                name = "IOS",
+                clientName = "IOS",
+                clientVersion = "19.09.3",
+                clientNameId = "5",
+                apiKey = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUA",
+                userAgent = "com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)"
+            )
+        )
 
         private val PIPED_INSTANCES = listOf(
             "https://pipedapi.kavin.rocks",
@@ -167,46 +222,37 @@ class YouTubeRepository @Inject constructor(
         }
     }
 
-    /**
-     * Visszaadja a hang URL-t ÉS egy részletes naplót arról, hogy melyik
-     * módszer mit csinált. Így a felhasználó pontosan látja, mi a hiba.
-     */
     suspend fun extractAudioStreamUrl(videoId: String): ExtractionResult = withContext(Dispatchers.IO) {
         val log = StringBuilder()
-
         log.appendLine("Videó ID: $videoId")
         log.appendLine("─────────────────")
 
-        // 1. InnerTube
-        log.appendLine("1) YouTube InnerTube API…")
-        val innertube = extractWithInnertube(videoId, log)
-        if (innertube != null) {
+        log.appendLine("1) YouTube InnerTube API (${INNERTUBE_CLIENTS.size} kliens)…")
+        val innertubeUrl = extractWithInnertube(videoId, log)
+        if (innertubeUrl != null) {
             log.appendLine("   ✓ SIKER")
-            return@withContext ExtractionResult(innertube, log.toString())
+            return@withContext ExtractionResult(innertubeUrl, log.toString())
         }
 
-        // 2. Piped
         log.appendLine("2) Piped instance-ok…")
-        val piped = extractWithPiped(videoId, log)
-        if (piped != null) {
+        val pipedUrl = extractWithPiped(videoId, log)
+        if (pipedUrl != null) {
             log.appendLine("   ✓ SIKER")
-            return@withContext ExtractionResult(piped, log.toString())
+            return@withContext ExtractionResult(pipedUrl, log.toString())
         }
 
-        // 3. Invidious
         log.appendLine("3) Invidious instance-ok…")
-        val invidious = extractWithInvidious(videoId, log)
-        if (invidious != null) {
+        val invidiousUrl = extractWithInvidious(videoId, log)
+        if (invidiousUrl != null) {
             log.appendLine("   ✓ SIKER")
-            return@withContext ExtractionResult(invidious, log.toString())
+            return@withContext ExtractionResult(invidiousUrl, log.toString())
         }
 
-        // 4. NewPipe
         log.appendLine("4) NewPipe extractor…")
-        val newpipe = extractWithNewPipe(videoId, log)
-        if (newpipe != null) {
+        val newpipeUrl = extractWithNewPipe(videoId, log)
+        if (newpipeUrl != null) {
             log.appendLine("   ✓ SIKER")
-            return@withContext ExtractionResult(newpipe, log.toString())
+            return@withContext ExtractionResult(newpipeUrl, log.toString())
         }
 
         log.appendLine("─────────────────")
@@ -214,45 +260,65 @@ class YouTubeRepository @Inject constructor(
         ExtractionResult(null, log.toString())
     }
 
-    private fun extractWithInnertube(videoId: String, log: StringBuilder): String? {
-        return try {
-            val json = """{"videoId":"$videoId","context":{"client":{"clientName":"ANDROID","clientVersion":"17.31.35","androidSdkVersion":30,"hl":"en","timeZone":"UTC","utcOffsetMinutes":0}}}"""
-            val requestBody = json.toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false")
-                .post(requestBody)
-                .addHeader("User-Agent", "com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip")
-                .addHeader("X-YouTube-Client-Name", "3")
-                .addHeader("X-YouTube-Client-Version", "17.31.35")
-                .build()
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                log.appendLine("   HTTP ${response.code}")
-                return null
-            }
-            val body = response.body?.string()
-            if (body == null) {
-                log.appendLine("   üres válasz")
-                return null
-            }
-            val result = gson.fromJson(body, InnertubPlayerResponse::class.java)
-            val status = result.playabilityStatus?.status
-            if (status != "OK") {
-                log.appendLine("   playability=$status ${result.playabilityStatus?.reason ?: ""}")
-                return null
-            }
-            val streamUrl = result.streamingData?.adaptiveFormats
-                ?.filter { it.url != null && it.mimeType?.startsWith("audio") == true }
-                ?.maxByOrNull { it.bitrate ?: 0 }
-                ?.url
-            if (streamUrl == null) {
-                log.appendLine("   nincs használható audio formátum (URL titkosított?)")
-            }
-            streamUrl
-        } catch (e: Exception) {
-            log.appendLine("   ${e.javaClass.simpleName}: ${e.message}")
-            null
+    private fun buildInnertubeJson(videoId: String, cfg: InnertubeClientConfig): String {
+        val clientBlock = buildString {
+            append(""""clientName":"${cfg.clientName}","clientVersion":"${cfg.clientVersion}","hl":"en","timeZone":"UTC","utcOffsetMinutes":0""")
+            if (cfg.androidSdk != null) append(""","androidSdkVersion":${cfg.androidSdk}""")
         }
+        return if (cfg.embedUrl != null) {
+            """{"videoId":"$videoId","context":{"client":{$clientBlock},"thirdParty":{"embedUrl":"${cfg.embedUrl}"}}}"""
+        } else {
+            """{"videoId":"$videoId","context":{"client":{$clientBlock}}}"""
+        }
+    }
+
+    private fun extractWithInnertube(videoId: String, log: StringBuilder): String? {
+        for (cfg in INNERTUBE_CLIENTS) {
+            try {
+                val json = buildInnertubeJson(videoId, cfg)
+                val requestBody = json.toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("https://www.youtube.com/youtubei/v1/player?key=${cfg.apiKey}&prettyPrint=false")
+                    .post(requestBody)
+                    .addHeader("User-Agent", cfg.userAgent)
+                    .addHeader("X-YouTube-Client-Name", cfg.clientNameId)
+                    .addHeader("X-YouTube-Client-Version", cfg.clientVersion)
+                    .addHeader("Origin", "https://www.youtube.com")
+                    .addHeader("Referer", "https://www.youtube.com/")
+                    .build()
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    log.appendLine("   ${cfg.name} → HTTP ${response.code}")
+                    continue
+                }
+                val body = response.body?.string() ?: run {
+                    log.appendLine("   ${cfg.name} → üres válasz")
+                    continue
+                }
+                val result = gson.fromJson(body, InnertubPlayerResponse::class.java)
+                val status = result.playabilityStatus?.status
+                if (status != "OK") {
+                    log.appendLine("   ${cfg.name} → $status ${result.playabilityStatus?.reason ?: ""}")
+                    continue
+                }
+                // Előnyben részesíti az audio-only adaptiveFormats-t
+                val audioUrl = result.streamingData?.adaptiveFormats
+                    ?.filter { it.url != null && it.mimeType?.startsWith("audio") == true }
+                    ?.maxByOrNull { it.bitrate ?: 0 }
+                    ?.url
+                if (audioUrl != null) return audioUrl
+                // Fallback: vegyes formátumok (audio+video)
+                val mixedUrl = result.streamingData?.formats
+                    ?.filter { it.url != null }
+                    ?.maxByOrNull { it.bitrate ?: 0 }
+                    ?.url
+                if (mixedUrl != null) return mixedUrl
+                log.appendLine("   ${cfg.name} → OK státusz, de nincs stream URL")
+            } catch (e: Exception) {
+                log.appendLine("   ${cfg.name} → ${e.javaClass.simpleName}: ${e.message?.take(80)}")
+            }
+        }
+        return null
     }
 
     private fun extractWithPiped(videoId: String, log: StringBuilder): String? {
@@ -326,7 +392,7 @@ class YouTubeRepository @Inject constructor(
             if (streamUrl == null) log.appendLine("   nincs audio stream")
             streamUrl
         } catch (e: Exception) {
-            log.appendLine("   ${e.javaClass.simpleName}: ${e.message}")
+            log.appendLine("   ${e.javaClass.simpleName}: ${e.message?.take(100)}")
             null
         }
     }
