@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.toolnagy.ringtonemanager.data.api.YouTubeApiService
+import com.toolnagy.ringtonemanager.data.model.ExtractionResult
 import com.toolnagy.ringtonemanager.data.model.YouTubeVideo
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,7 @@ private data class InnertubPlayerResponse(
     val streamingData: InnertubStreamingData?,
     val playabilityStatus: InnertubPlayabilityStatus?
 )
-private data class InnertubPlayabilityStatus(val status: String?)
+private data class InnertubPlayabilityStatus(val status: String?, val reason: String?)
 private data class InnertubStreamingData(
     val adaptiveFormats: List<InnertubFormat>?,
     val formats: List<InnertubFormat>?
@@ -166,20 +167,54 @@ class YouTubeRepository @Inject constructor(
         }
     }
 
-    suspend fun extractAudioStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        val innertubeUrl = extractWithInnertube(videoId)
-        if (innertubeUrl != null) return@withContext innertubeUrl
+    /**
+     * Visszaadja a hang URL-t ÉS egy részletes naplót arról, hogy melyik
+     * módszer mit csinált. Így a felhasználó pontosan látja, mi a hiba.
+     */
+    suspend fun extractAudioStreamUrl(videoId: String): ExtractionResult = withContext(Dispatchers.IO) {
+        val log = StringBuilder()
 
-        val pipedUrl = extractWithPiped(videoId)
-        if (pipedUrl != null) return@withContext pipedUrl
+        log.appendLine("Videó ID: $videoId")
+        log.appendLine("─────────────────")
 
-        val invidiousUrl = extractWithInvidious(videoId)
-        if (invidiousUrl != null) return@withContext invidiousUrl
+        // 1. InnerTube
+        log.appendLine("1) YouTube InnerTube API…")
+        val innertube = extractWithInnertube(videoId, log)
+        if (innertube != null) {
+            log.appendLine("   ✓ SIKER")
+            return@withContext ExtractionResult(innertube, log.toString())
+        }
 
-        extractWithNewPipe(videoId)
+        // 2. Piped
+        log.appendLine("2) Piped instance-ok…")
+        val piped = extractWithPiped(videoId, log)
+        if (piped != null) {
+            log.appendLine("   ✓ SIKER")
+            return@withContext ExtractionResult(piped, log.toString())
+        }
+
+        // 3. Invidious
+        log.appendLine("3) Invidious instance-ok…")
+        val invidious = extractWithInvidious(videoId, log)
+        if (invidious != null) {
+            log.appendLine("   ✓ SIKER")
+            return@withContext ExtractionResult(invidious, log.toString())
+        }
+
+        // 4. NewPipe
+        log.appendLine("4) NewPipe extractor…")
+        val newpipe = extractWithNewPipe(videoId, log)
+        if (newpipe != null) {
+            log.appendLine("   ✓ SIKER")
+            return@withContext ExtractionResult(newpipe, log.toString())
+        }
+
+        log.appendLine("─────────────────")
+        log.appendLine("✗ Minden módszer megbukott.")
+        ExtractionResult(null, log.toString())
     }
 
-    private fun extractWithInnertube(videoId: String): String? {
+    private fun extractWithInnertube(videoId: String, log: StringBuilder): String? {
         return try {
             val json = """{"videoId":"$videoId","context":{"client":{"clientName":"ANDROID","clientVersion":"17.31.35","androidSdkVersion":30,"hl":"en","timeZone":"UTC","utcOffsetMinutes":0}}}"""
             val requestBody = json.toRequestBody("application/json".toMediaType())
@@ -191,28 +226,48 @@ class YouTubeRepository @Inject constructor(
                 .addHeader("X-YouTube-Client-Version", "17.31.35")
                 .build()
             val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
+            if (!response.isSuccessful) {
+                log.appendLine("   HTTP ${response.code}")
+                return null
+            }
+            val body = response.body?.string()
+            if (body == null) {
+                log.appendLine("   üres válasz")
+                return null
+            }
             val result = gson.fromJson(body, InnertubPlayerResponse::class.java)
-            if (result.playabilityStatus?.status != "OK") return null
-            result.streamingData?.adaptiveFormats
+            val status = result.playabilityStatus?.status
+            if (status != "OK") {
+                log.appendLine("   playability=$status ${result.playabilityStatus?.reason ?: ""}")
+                return null
+            }
+            val streamUrl = result.streamingData?.adaptiveFormats
                 ?.filter { it.url != null && it.mimeType?.startsWith("audio") == true }
                 ?.maxByOrNull { it.bitrate ?: 0 }
                 ?.url
-        } catch (_: Exception) {
+            if (streamUrl == null) {
+                log.appendLine("   nincs használható audio formátum (URL titkosított?)")
+            }
+            streamUrl
+        } catch (e: Exception) {
+            log.appendLine("   ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
 
-    private fun extractWithPiped(videoId: String): String? {
+    private fun extractWithPiped(videoId: String, log: StringBuilder): String? {
         for (instance in PIPED_INSTANCES) {
+            val host = instance.removePrefix("https://")
             try {
                 val url = "$instance/streams/$videoId"
                 val request = Request.Builder().url(url)
                     .addHeader("User-Agent", "RingtoneManager/1.0")
                     .build()
                 val response = okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) continue
+                if (!response.isSuccessful) {
+                    log.appendLine("   $host → HTTP ${response.code}")
+                    continue
+                }
                 val body = response.body?.string() ?: continue
                 val result = gson.fromJson(body, PipedStreamsResponse::class.java)
                 val streamUrl = result.audioStreams
@@ -220,20 +275,27 @@ class YouTubeRepository @Inject constructor(
                     ?.maxByOrNull { it.quality?.replace("[^0-9]".toRegex(), "")?.toIntOrNull() ?: 0 }
                     ?.url
                 if (streamUrl != null) return streamUrl
-            } catch (_: Exception) {}
+                log.appendLine("   $host → nincs audio stream")
+            } catch (e: Exception) {
+                log.appendLine("   $host → ${e.javaClass.simpleName}")
+            }
         }
         return null
     }
 
-    private fun extractWithInvidious(videoId: String): String? {
+    private fun extractWithInvidious(videoId: String, log: StringBuilder): String? {
         for (instance in INVIDIOUS_INSTANCES) {
+            val host = instance.removePrefix("https://")
             try {
                 val url = "$instance/api/v1/videos/$videoId?fields=adaptiveFormats"
                 val request = Request.Builder().url(url)
                     .addHeader("User-Agent", "RingtoneManager/1.0")
                     .build()
                 val response = okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) continue
+                if (!response.isSuccessful) {
+                    log.appendLine("   $host → HTTP ${response.code}")
+                    continue
+                }
                 val body = response.body?.string() ?: continue
                 val result = gson.fromJson(body, InvidiousVideoResponse::class.java)
                 val streamUrl = result.adaptiveFormats
@@ -241,24 +303,30 @@ class YouTubeRepository @Inject constructor(
                     ?.maxByOrNull { it.bitrate?.toLongOrNull() ?: 0L }
                     ?.url
                 if (streamUrl != null) return streamUrl
-            } catch (_: Exception) {}
+                log.appendLine("   $host → nincs audio stream")
+            } catch (e: Exception) {
+                log.appendLine("   $host → ${e.javaClass.simpleName}")
+            }
         }
         return null
     }
 
-    private fun extractWithNewPipe(videoId: String): String? {
+    private fun extractWithNewPipe(videoId: String, log: StringBuilder): String? {
         return try {
             val extractor = ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
             val audioStreams: List<AudioStream> = extractor.audioStreams
-            audioStreams
+            val streamUrl = audioStreams
                 .sortedByDescending { it.averageBitrate }
                 .firstOrNull()
                 ?.let {
                     @Suppress("DEPRECATION")
                     it.content ?: it.url
                 }
-        } catch (_: Exception) {
+            if (streamUrl == null) log.appendLine("   nincs audio stream")
+            streamUrl
+        } catch (e: Exception) {
+            log.appendLine("   ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }

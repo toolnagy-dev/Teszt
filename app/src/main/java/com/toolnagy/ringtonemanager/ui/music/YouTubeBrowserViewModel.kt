@@ -41,6 +41,10 @@ class YouTubeBrowserViewModel @Inject constructor(
     private val _completedRingtoneUri = MutableStateFlow<Uri?>(null)
     val completedRingtoneUri: StateFlow<Uri?> = _completedRingtoneUri.asStateFlow()
 
+    // Részletes hibanapló a felugró ablakhoz
+    private val _errorLog = MutableStateFlow<String?>(null)
+    val errorLog: StateFlow<String?> = _errorLog.asStateFlow()
+
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
 
@@ -83,28 +87,36 @@ class YouTubeBrowserViewModel @Inject constructor(
         viewModelScope.launch {
             updateDownloadState(video.id, DownloadStatus.EXTRACTING, 0f)
 
-            val streamUrl = repository.extractAudioStreamUrl(video.id)
+            val extraction = repository.extractAudioStreamUrl(video.id)
+            val streamUrl = extraction.url
             if (streamUrl == null) {
                 updateDownloadState(video.id, DownloadStatus.ERROR, 0f, "Nem sikerült kinyerni a hangot")
+                _errorLog.value = "HANG KINYERÉSE SIKERTELEN\n\n${extraction.log}"
                 return@launch
             }
 
             updateDownloadState(video.id, DownloadStatus.DOWNLOADING, 0f)
 
-            val uri = ringtoneHelper.downloadAudioToRingtones(
+            val result = ringtoneHelper.downloadAudioToRingtones(
                 url = streamUrl,
                 fileName = video.title.take(60),
                 onProgress = { progress -> updateDownloadState(video.id, DownloadStatus.DOWNLOADING, progress) }
             )
 
-            if (uri != null) {
-                updateDownloadState(video.id, DownloadStatus.DONE, 1f, localPath = uri.toString())
-                _completedRingtoneUri.value = uri
+            if (result.uri != null) {
+                updateDownloadState(video.id, DownloadStatus.DONE, 1f, localPath = result.uri.toString())
+                _completedRingtoneUri.value = result.uri
             } else {
                 updateDownloadState(video.id, DownloadStatus.ERROR, 0f, "Letöltés sikertelen")
+                _errorLog.value = "LETÖLTÉS SIKERTELEN\n\n" +
+                    "A hang URL megvolt, de a letöltés/mentés nem sikerült:\n\n" +
+                    "${result.error}\n\n" +
+                    "Forrás URL:\n${streamUrl.take(120)}…"
             }
         }
     }
+
+    fun dismissError() { _errorLog.value = null }
 
     private fun updateDownloadState(
         videoId: String,

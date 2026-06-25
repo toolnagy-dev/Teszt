@@ -23,15 +23,21 @@ class RingtoneHelper @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
 
+    data class DownloadResult(val uri: Uri?, val error: String? = null)
+
     suspend fun downloadAudioToRingtones(
         url: String,
         fileName: String,
         onProgress: (Float) -> Unit
-    ): Uri? = withContext(Dispatchers.IO) {
+    ): DownloadResult = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).build()
             val response = okHttpClient.newCall(request).execute()
-            val body = response.body ?: return@withContext null
+            if (!response.isSuccessful) {
+                return@withContext DownloadResult(null, "Letöltés HTTP ${response.code}")
+            }
+            val body = response.body
+                ?: return@withContext DownloadResult(null, "Üres válasz a szervertől")
             val contentLength = body.contentLength()
 
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -43,7 +49,7 @@ class RingtoneHelper @Inject constructor(
                     put(MediaStore.Audio.Media.IS_PENDING, 1)
                 }
                 val insertUri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-                    ?: return@withContext null
+                    ?: return@withContext DownloadResult(null, "Nem sikerült fájlt létrehozni a Csengőhangok mappában")
 
                 context.contentResolver.openOutputStream(insertUri)?.use { out ->
                     val buf = ByteArray(8192)
@@ -83,9 +89,9 @@ class RingtoneHelper @Inject constructor(
                 }
                 context.contentResolver.insert(MediaStore.Audio.Media.getContentUriForPath(file.absolutePath)!!, values)
             }
-            uri
+            DownloadResult(uri, if (uri == null) "A mentés nem adott vissza URI-t" else null)
         } catch (e: Exception) {
-            null
+            DownloadResult(null, "${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

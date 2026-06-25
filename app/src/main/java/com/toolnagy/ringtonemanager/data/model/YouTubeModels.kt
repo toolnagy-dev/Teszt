@@ -48,3 +48,8 @@ data class DownloadState(
 enum class DownloadStatus {
     IDLE, EXTRACTING, DOWNLOADING, DONE, ERROR
 }
+
+data class ExtractionResult(
+    val url: String?,
+    val log: String
+)

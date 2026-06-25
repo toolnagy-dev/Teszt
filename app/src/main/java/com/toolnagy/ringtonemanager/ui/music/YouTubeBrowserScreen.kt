@@ -4,7 +4,9 @@ import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,9 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -38,12 +44,20 @@ fun YouTubeBrowserScreen(
     val downloadStates by viewModel.downloadStates.collectAsStateWithLifecycle()
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val completedUri by viewModel.completedRingtoneUri.collectAsStateWithLifecycle()
+    val errorLog by viewModel.errorLog.collectAsStateWithLifecycle()
 
     LaunchedEffect(completedUri) {
         completedUri?.let { uri ->
             onRingtoneReady(uri)
             viewModel.consumeRingtoneUri()
         }
+    }
+
+    errorLog?.let { log ->
+        ErrorDetailDialog(
+            log = log,
+            onDismiss = viewModel::dismissError
+        )
     }
 
     Scaffold(
@@ -156,6 +170,53 @@ fun YouTubeBrowserScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ErrorDetailDialog(
+    log: String,
+    onDismiss: () -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Mi a hiba?") },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "Ez a részletes napló mutatja, melyik módszer pontosan hol akadt el. Másold ki és küldd el, ha kell segítség.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = log,
+                        modifier = Modifier.padding(12.dp),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Bezárás") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(log))
+            }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Másolás")
+            }
+        }
+    )
 }
 
 @Composable

@@ -153,13 +153,13 @@ class SpotifyBrowserViewModel @Inject constructor(
         stopPreview()
         _downloadingTrackId.value = track.id
         viewModelScope.launch {
-            val uri = ringtoneHelper.downloadAudioToRingtones(
+            val result = ringtoneHelper.downloadAudioToRingtones(
                 url = previewUrl,
                 fileName = "${track.artistNames} - ${track.name}".take(60),
                 onProgress = {}
             )
             _downloadingTrackId.value = null
-            _completedRingtoneUri.value = uri
+            _completedRingtoneUri.value = result.uri
         }
     }
 
